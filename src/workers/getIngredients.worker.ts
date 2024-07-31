@@ -8,6 +8,8 @@ import { IIngredientMarket } from "../interfaces/ingredientsMarket.interface";
 import { QueryRunner } from "typeorm";
 import { AppDataSource } from "../config/DataSource.config";
 import { Ingredients } from "../models/ingredients.model";
+import serverAmqp from "../amqp/server.amqp";
+import { QUEUES } from "../amqp/queues.amqp";
 
 @Service()
 export class GetIngredientsWorker implements IWorker {
@@ -24,7 +26,7 @@ export class GetIngredientsWorker implements IWorker {
     await queryRunner.startTransaction();
     try {
       console.log("Processing message:", msg);
-      const { ingredients: requestIngredients } = msg;
+      const { ingredients: requestIngredients, keyRedis, uuid, recipe } = msg;
       const ids = requestIngredients.map((i) => i.ingredientId);
       const ingredientsWareHouse =
         await this.ingredientsRepository.getIngredientsFromWareHouse(ids);
@@ -53,6 +55,14 @@ export class GetIngredientsWorker implements IWorker {
       }
 
       await queryRunner.commitTransaction();
+
+      await serverAmqp.sendToQueue(QUEUES.SEND_INGREDIENTS.NAME, {
+        uuid,
+        keyRedis,
+        status: "processing",
+        recipe,
+      });
+
       console.log("Message processed successfully", msg.uuid);
     } catch (exception) {
       await queryRunner.rollbackTransaction();
@@ -69,7 +79,7 @@ export class GetIngredientsWorker implements IWorker {
     requiredQuantity: number,
   ): Promise<Ingredients> {
     while (requiredQuantity > 0) {
-      const { id, name } = ingredient;
+      const { name } = ingredient;
       const response = await this.api.get<IIngredientMarket>("/buy", {
         params: { ingredient: name },
       });
