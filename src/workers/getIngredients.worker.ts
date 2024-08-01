@@ -25,49 +25,57 @@ export class GetIngredientsWorker implements IWorker {
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
-      console.log("Processing message:", msg);
-      const { ingredients: requestIngredients, keyRedis, uuid, recipe } = msg;
-      const ids = requestIngredients.map((i) => i.ingredientId);
-      const ingredientsWareHouse =
-        await this.ingredientsRepository.getIngredientsFromWareHouse(ids);
-      const ingredientsMap = new Map(
-        ingredientsWareHouse.map((ing) => [ing.id, ing]),
-      );
+      await this.ingredientsRepository.manager.transaction(async () => {
+        console.info(`[INFO] Receiving order from aliments ${msg.uuid}`);
+        const { ingredients: requestIngredients, keyRedis, uuid, recipe } = msg;
+        const ids = requestIngredients.map((i) => i.ingredientId);
 
-      for (const reqIngredient of requestIngredients) {
-        let ingredient = ingredientsMap.get(reqIngredient.ingredientId);
-        if (!ingredient)
-          throw new Error(
-            `Ingredient with ID ${reqIngredient.ingredientId} not found`,
-          );
+        const ingredientsWareHouse =
+          await this.ingredientsRepository.getIngredientsFromWareHouse(ids);
 
-        const requiredQuantity = reqIngredient.quantity - ingredient.quantity;
+        const ingredientsMap = new Map(
+          ingredientsWareHouse.map((ing) => [ing.id, ing]),
+        );
 
-        if (requiredQuantity > 0) {
-          ingredient = await this.buyAdditionalIngredients(
-            ingredient,
-            requiredQuantity,
-          );
+        for (const reqIngredient of requestIngredients) {
+          let ingredient = ingredientsMap.get(reqIngredient.ingredientId);
+          if (!ingredient)
+            throw new Error(
+              `Ingredient with ID ${reqIngredient.ingredientId} not found`,
+            );
+
+          const requiredQuantity = reqIngredient.quantity - ingredient.quantity;
+
+          if (requiredQuantity > 0) {
+            ingredient = await this.buyAdditionalIngredients(
+              ingredient,
+              requiredQuantity,
+            );
+          }
+
+          ingredient.quantity -= reqIngredient.quantity;
+          await this.ingredientsRepository.save(ingredient);
         }
 
-        ingredient.quantity -= reqIngredient.quantity;
-        await this.ingredientsRepository.save(ingredient);
-      }
+        await queryRunner.commitTransaction();
 
-      await queryRunner.commitTransaction();
+        await serverAmqp.sendToQueue(QUEUES.SEND_INGREDIENTS.NAME, {
+          uuid,
+          keyRedis,
+          recipe,
+        });
 
-      await serverAmqp.sendToQueue(QUEUES.SEND_INGREDIENTS.NAME, {
-        uuid,
-        keyRedis,
-        status: "processing",
-        recipe,
+        console.log(
+          `[INFO] Sending ingredients to kitchen - Order ${msg.uuid}`,
+        );
       });
-
-      console.log("Message processed successfully", msg.uuid);
     } catch (exception) {
       await queryRunner.rollbackTransaction();
       console.error("ERROR: GetIngredientsWorker.run", exception);
-      throw exception;
+      await serverAmqp.sendToQueue("error_queue", {
+        error: exception,
+        originalMessage: message,
+      });
     } finally {
       await queryRunner.release();
       ack();
@@ -79,6 +87,9 @@ export class GetIngredientsWorker implements IWorker {
     requiredQuantity: number,
   ): Promise<Ingredients> {
     while (requiredQuantity > 0) {
+      console.info(
+        `[INFO] Requesting ingredient ${ingredient.name} - quantity ${requiredQuantity}`,
+      );
       const { name } = ingredient;
       const response = await this.api.get<IIngredientMarket>("/buy", {
         params: { ingredient: name },
