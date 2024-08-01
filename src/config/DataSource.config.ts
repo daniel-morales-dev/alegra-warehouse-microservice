@@ -10,8 +10,8 @@ export const AppDataSource = new DataSource({
   username: process.env.DATABASE_USER,
   password: String(process.env.DATABASE_PASSWORD || "") + "",
   database: process.env.DATABASE_NAME,
-  entities: [resolve("src/models/*{.ts,.js}")],
-  migrations: [resolve("src/migrations/*{.ts,.js}")],
+  entities: [resolve(__dirname, "../models/*{.ts,.js}")],
+  migrations: [resolve(__dirname, "../migrations/*{.ts,.js}")],
   synchronize: false,
   logging: true,
   ssl: {
