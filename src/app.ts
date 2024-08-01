@@ -6,7 +6,7 @@ import { Application } from "express";
 const app: Application = createExpressServer({
   defaultErrorHandler: false,
   classTransformer: true,
-  routePrefix: "/api/orders",
+  routePrefix: "/api/warehouse",
   validation: {
     validationError: {
       target: false,
