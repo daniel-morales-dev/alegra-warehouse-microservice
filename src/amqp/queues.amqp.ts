@@ -5,6 +5,7 @@ export const QUEUES = {
   REQUEST_FOOD: {
     NAME: "REQUEST_FOOD",
     HANDLER: GetIngredientsWorker,
+    PREFETCH: 2,
   },
   SEND_INGREDIENTS: {
     NAME: "SEND_INGREDIENTS",
