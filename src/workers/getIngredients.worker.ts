@@ -10,11 +10,15 @@ import { AppDataSource } from "../config/DataSource.config";
 import { Ingredients } from "../models/ingredients.model";
 import serverAmqp from "../amqp/server.amqp";
 import { QUEUES } from "../amqp/queues.amqp";
+import { ShoppingHistoryRepository } from "../repositories/shoppingHistory.repository";
 
 @Service()
 export class GetIngredientsWorker implements IWorker {
   private api: ApiCore;
-  constructor(private readonly ingredientsRepository: IngredientsRepository) {
+  constructor(
+    private readonly ingredientsRepository: IngredientsRepository,
+    private readonly shoppingHistoryRepository: ShoppingHistoryRepository,
+  ) {
     this.api = new ApiCore({
       baseURL: MARKET_URL,
     });
@@ -28,6 +32,7 @@ export class GetIngredientsWorker implements IWorker {
       await this.ingredientsRepository.manager.transaction(async () => {
         console.info(`[INFO] Receiving order from aliments ${msg.uuid}`);
         const { ingredients: requestIngredients, keyRedis, uuid, recipe } = msg;
+        console.log(`[INFO] - WareHouse - RECIPE Requested`, { recipe });
         const ids = requestIngredients.map((i) => i.ingredientId);
 
         const ingredientsWareHouse =
@@ -54,6 +59,12 @@ export class GetIngredientsWorker implements IWorker {
           }
 
           ingredient.quantity -= reqIngredient.quantity;
+          const indexIngredientRecipe = recipe.recipeIngredients.findIndex(
+            (ing) => ing.ingredientId === ingredient.id,
+          );
+          recipe.recipeIngredients[indexIngredientRecipe].name =
+            ingredient.name;
+
           await this.ingredientsRepository.save(ingredient);
         }
 
@@ -100,6 +111,14 @@ export class GetIngredientsWorker implements IWorker {
       if (quantitySold > 0) {
         ingredient.quantity += quantitySold;
         ingredient = await this.ingredientsRepository.save(ingredient);
+        const shoppingHistory = this.shoppingHistoryRepository.create({
+          ingredientId: ingredient.id,
+          quantity: quantitySold,
+        });
+
+        await this.shoppingHistoryRepository.save(shoppingHistory);
+
+        console.info("[INFO] Saved shopping history");
 
         requiredQuantity -= quantitySold;
       }

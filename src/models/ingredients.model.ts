@@ -1,4 +1,5 @@
-import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { ShoppingHistory } from "./shoppingHistory.model";
 
 @Entity("ingredients")
 export class Ingredients {
@@ -10,4 +11,10 @@ export class Ingredients {
 
   @Column({ type: "integer", name: "quantity" })
   quantity: number;
+
+  @OneToMany(
+    () => ShoppingHistory,
+    (shoppingHistory) => shoppingHistory.ingredients,
+  )
+  shoppingHistory: ShoppingHistory[];
 }

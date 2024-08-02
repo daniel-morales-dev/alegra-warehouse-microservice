@@ -8,9 +8,10 @@ export interface IRequestIngredients {
 export interface IIngredientMessage {
   ingredientId: number;
   quantity: number;
+  name?: string;
 }
 export interface IRecipe {
   id: number;
   name: string;
-  recipeIngredients: IIngredientMessage;
+  recipeIngredients: IIngredientMessage[];
 }
